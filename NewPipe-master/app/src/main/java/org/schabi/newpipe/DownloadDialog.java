@@ -136,8 +136,10 @@ public class DownloadDialog extends DialogFragment {
         forbiddenCharsPatterns.add("[^\\w\\d\\.]+");  // last chance... only latin letters and digits
         String nameToTest = fName;
         for (String pattern : forbiddenCharsPatterns) {
-            nameToTest = nameToTest.replaceAll(pattern, "_");
+            //nameToTest = nameToTest.replaceAll(pattern, "_");
+	    nameToTest = nameToTest.replaceAll(pattern, " ");
         }
+	    nameToTest = nameToTest.trim();
         return nameToTest;
     }
 

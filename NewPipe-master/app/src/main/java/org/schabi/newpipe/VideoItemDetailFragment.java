@@ -23,6 +23,7 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -33,20 +34,13 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
-import android.view.MenuItem;
 import android.widget.Toast;
-
-import java.io.IOException;
 
 import com.google.android.exoplayer.util.Util;
 import com.nostra13.universalimageloader.core.DisplayImageOptions;
 import com.nostra13.universalimageloader.core.ImageLoader;
 import com.nostra13.universalimageloader.core.assist.FailReason;
 import com.nostra13.universalimageloader.core.listener.ImageLoadingListener;
-
-import java.util.ArrayList;
-import java.util.Vector;
-
 
 import org.schabi.newpipe.extractor.AudioStream;
 import org.schabi.newpipe.extractor.MediaFormat;
@@ -59,8 +53,12 @@ import org.schabi.newpipe.extractor.StreamingService;
 import org.schabi.newpipe.extractor.VideoStream;
 import org.schabi.newpipe.extractor.services.youtube.YoutubeStreamExtractor;
 import org.schabi.newpipe.player.BackgroundPlayer;
-import org.schabi.newpipe.player.PlayVideoActivity;
 import org.schabi.newpipe.player.ExoPlayerActivity;
+import org.schabi.newpipe.player.PlayVideoActivity;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Vector;
 
 
 /**
@@ -920,11 +918,17 @@ public class VideoItemDetailFragment extends Fragment {
 
             } else {
                 // Internal Player
+                if(videoThumbnail != null) {//////comp530
+                    ActivityCommunicator.getCommunicator()
+                            .backgroundPlayerThumbnail = videoThumbnail;
+                }
                 Intent intent = new Intent(activity, PlayVideoActivity.class)
                         .putExtra(PlayVideoActivity.VIDEO_TITLE, info.title)
                         .putExtra(PlayVideoActivity.STREAM_URL, selectedVideoStream.url)
                         .putExtra(PlayVideoActivity.VIDEO_URL, info.webpage_url)
-                        .putExtra(PlayVideoActivity.START_POSITION, info.start_position);
+                        .putExtra(PlayVideoActivity.START_POSITION, info.start_position)
+                        .putExtra(BackgroundPlayer.CHANNEL_NAME, info.uploader)//////comp530
+                        .putExtra(BackgroundPlayer.TITLE, info.title);/////comp530
                 activity.startActivity(intent);     //also HERE !!!
             }
         }
