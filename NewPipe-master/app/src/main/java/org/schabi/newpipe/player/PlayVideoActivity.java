@@ -1,19 +1,31 @@
 package org.schabi.newpipe.player;
 
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.TaskStackBuilder;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
+import android.content.res.Resources;
+import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
 import android.media.MediaPlayer;
 import android.media.AudioManager;
 import android.net.Uri;
+import android.net.wifi.p2p.WifiP2pManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.PowerManager;
 import android.support.v7.app.ActionBar;
 import android.support.v7.app.AppCompatActivity;
+import android.support.v7.app.NotificationCompat;
+import android.support.v7.app.NotificationCompat.Builder;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Display;
@@ -21,15 +33,21 @@ import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.MediaController;
 import android.widget.ProgressBar;
+import android.widget.RemoteViews;
 import android.widget.VideoView;
 
+import org.schabi.newpipe.ActivityCommunicator;
 import org.schabi.newpipe.App;
+import org.schabi.newpipe.BuildConfig;
 import org.schabi.newpipe.R;
+import org.schabi.newpipe.VideoItemDetailActivity;
+import org.schabi.newpipe.VideoItemDetailFragment;
 
 /**
  * Copyright (C) Christian Schabesberger 2015 <chris.schabesberger@mailbox.org>
@@ -59,6 +77,7 @@ public class PlayVideoActivity extends AppCompatActivity {
     public static final String VIDEO_TITLE = "video_title";
     private static final String POSITION = "position";
     public static final String START_POSITION = "start_position";
+    public static final String CHANNEL_NAME = "channel_name";
 
     private static final long HIDING_DELAY = 3000;
 
@@ -78,6 +97,25 @@ public class PlayVideoActivity extends AppCompatActivity {
     private SharedPreferences prefs;
     private static final String PREF_IS_LANDSCAPE = "is_landscape";
 
+
+    //////////////////// comp530
+    private NotificationCompat.Builder noteBuilder;
+    private PlayVideoActivity owner;
+    private int noteID = TAG.hashCode();
+
+    //private static final String TAG = BackgroundPlayer.class.toString();
+    private static final String ACTION_STOP = TAG + ".STOP";
+    private static final String ACTION_PLAYPAUSE = TAG + ".PLAYPAUSE";
+    private volatile int serviceId = -1;
+    private volatile String webUrl = "";
+    private String title = "";
+    private Bitmap videoThumbnail = null;
+    private volatile String channelName = "";
+    private Notification note;
+    private NotificationManager noteMgr;
+    ////////////////////
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -94,7 +132,7 @@ public class PlayVideoActivity extends AppCompatActivity {
         actionBar = getSupportActionBar();
         assert actionBar != null;
         actionBar.setDisplayHomeAsUpEnabled(true);
-        Intent intent = getIntent();
+        final Intent intent = getIntent();
         if(mediaController == null) {
             //prevents back button hiding media controller controls (after showing them)
             //instead of exiting video
@@ -119,12 +157,16 @@ public class PlayVideoActivity extends AppCompatActivity {
                     }
                     return super.dispatchKeyEvent(event);
                 }
+
+
             };
         }
 
         position = intent.getIntExtra(START_POSITION, 0)*1000;//convert from seconds to milliseconds
 
         videoView = (VideoView) findViewById(R.id.video_view);
+
+
         progressBar = (ProgressBar) findViewById(R.id.play_video_progress_bar);
         try {
             videoView.setMediaController(mediaController);
@@ -132,7 +174,20 @@ public class PlayVideoActivity extends AppCompatActivity {
         } catch (Exception e) {
             e.printStackTrace();
         }
+
+        try//////comp530
+        {
+            videoThumbnail = ActivityCommunicator.getCommunicator().backgroundPlayerThumbnail;
+        }
+        catch (Exception e) {
+            Log.e(TAG, "Could not get video thumbnail from ActivityCommunicator");
+            e.printStackTrace();
+        }
+        title = intent.getStringExtra(VIDEO_TITLE); //////comp530
+        channelName = getIntent().getStringExtra(CHANNEL_NAME); //////comp530
+
         videoView.requestFocus();
+
         videoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
             @Override
             public void onPrepared(MediaPlayer mp) {
@@ -140,11 +195,19 @@ public class PlayVideoActivity extends AppCompatActivity {
                 videoView.seekTo(position);
                 if (position <= 0) {
                     videoView.start();
+                    //createNotification();
+
                     showUi();
                 } else {
+
+
+
                     videoView.pause();
+
                 }
             }
+
+
         });
         videoUrl = intent.getStringExtra(VIDEO_URL);
 
@@ -194,11 +257,33 @@ public class PlayVideoActivity extends AppCompatActivity {
     public void onPause() {
         super.onPause();
         videoView.pause();
+
+
+        ////   New Code    //////comp530
+        IntentFilter filter = new IntentFilter();
+        filter.setPriority(Integer.MAX_VALUE);
+        filter.addAction(ACTION_PLAYPAUSE);
+        filter.addAction(ACTION_STOP);
+        registerReceiver(broadcastReceiver, filter);
+
+        if(note == null)
+        {
+            note = buildNotification();
+
+            //startForeground(noteID, note);
+            noteMgr = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+
+            noteMgr.notify(noteID, note);
+        }
+
+        showPlaySign();
+        ///New Code
     }
 
     @Override
     public void onResume() {
         super.onResume();
+
     }
 
     @Override
@@ -272,6 +357,7 @@ public class PlayVideoActivity extends AppCompatActivity {
                     if ((System.currentTimeMillis() - lastUiShowTime) >= HIDING_DELAY) {
                         hideUi();
                     }
+
                 }
             }, HIDING_DELAY);
             lastUiShowTime = System.currentTimeMillis();
@@ -367,5 +453,149 @@ public class PlayVideoActivity extends AppCompatActivity {
         SharedPreferences.Editor editor = prefs.edit();
         editor.putBoolean(PREF_IS_LANDSCAPE, isLandscape);
         editor.apply();
+    }
+
+
+    private Notification buildNotification() {//////comp530
+        Notification note;
+        owner = this;
+        Resources res = getApplicationContext().getResources();
+        noteBuilder = new NotificationCompat.Builder(owner);
+
+        PendingIntent playPI = PendingIntent.getBroadcast(owner, noteID,
+                new Intent(ACTION_PLAYPAUSE), PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent stopPI = PendingIntent.getBroadcast(owner, noteID,
+                new Intent(ACTION_STOP), PendingIntent.FLAG_UPDATE_CURRENT);
+            /*
+            NotificationCompat.Action pauseButton = new NotificationCompat.Action.Builder
+                    (R.drawable.ic_pause_white_24dp, "Pause", playPI).build();
+            */
+
+        //build intent to return to video, on tapping notification
+        Intent openDetailViewIntent = new Intent(getApplicationContext(),
+                VideoItemDetailActivity.class);
+        openDetailViewIntent.putExtra(VideoItemDetailFragment.STREAMING_SERVICE, serviceId);
+        openDetailViewIntent.putExtra(VideoItemDetailFragment.VIDEO_URL, webUrl);
+        openDetailViewIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent openDetailView = PendingIntent.getActivity(owner, noteID,
+                openDetailViewIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+        noteBuilder
+                .setOngoing(true)
+                .setDeleteIntent(stopPI)
+                        //doesn't fit with Notification.MediaStyle
+                        //.setProgress(vidLength, 0, false)
+                .setSmallIcon(R.drawable.ic_play_circle_filled_white_24dp)
+                .setTicker(
+                        String.format(res.getString(
+                                R.string.background_player_time_text), title))
+                .setContentIntent(PendingIntent.getActivity(getApplicationContext(),
+                        noteID, openDetailViewIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT))
+                .setContentIntent(openDetailView);
+
+
+        RemoteViews view =
+                new RemoteViews(BuildConfig.APPLICATION_ID, R.layout.player_notification);
+        view.setImageViewBitmap(R.id.notificationCover, videoThumbnail);
+        view.setTextViewText(R.id.notificationSongName, title);
+        view.setTextViewText(R.id.notificationArtist, channelName);
+        view.setOnClickPendingIntent(R.id.notificationStop, stopPI);
+        view.setOnClickPendingIntent(R.id.notificationPlayPause, playPI);
+        view.setOnClickPendingIntent(R.id.notificationContent, openDetailView);
+
+        //possibly found the expandedView problem,
+        //but can't test it as I don't have a 5.0 device. -medavox
+        RemoteViews expandedView =
+                new RemoteViews(BuildConfig.APPLICATION_ID, R.layout.player_notification_expanded);
+        expandedView.setImageViewBitmap(R.id.notificationCover, videoThumbnail);
+        expandedView.setTextViewText(R.id.notificationSongName, title);
+        expandedView.setTextViewText(R.id.notificationArtist, channelName);
+        expandedView.setOnClickPendingIntent(R.id.notificationStop, stopPI);
+        expandedView.setOnClickPendingIntent(R.id.notificationPlayPause, playPI);
+        expandedView.setOnClickPendingIntent(R.id.notificationContent, openDetailView);
+
+
+        noteBuilder.setCategory(Notification.CATEGORY_TRANSPORT);
+
+        //Make notification appear on lockscreen
+        noteBuilder.setVisibility(Notification.VISIBILITY_PUBLIC);
+        noteBuilder.setVisibility(Notification.DEFAULT_SOUND);
+
+        note = noteBuilder.build();
+        note.contentView = view;
+
+        if (android.os.Build.VERSION.SDK_INT > 16) {
+            note.bigContentView = expandedView;
+        }
+
+        return note;
+    }
+
+    /**Handles button presses from the notification. */   //////comp530
+    private final BroadcastReceiver broadcastReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            //Log.i(TAG, "received broadcast action:"+action);
+            if(action.equals(ACTION_PLAYPAUSE)) {
+                if(videoView.isPlaying()) {
+                    videoView.pause();
+                    showPlaySign();
+                }
+                else {
+                    //reacquire CPU lock after auto-releasing it on pause
+                    //videoView.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+                    videoView.start();
+                    showPauseSign();
+                }
+            }
+            else if(action.equals(ACTION_STOP)) {
+                ////this auto-releases CPU lock
+                ////videoView.stop();
+                //videoView.stopPlayback();
+                //afterPlayCleanup();
+            }
+        }
+    };
+
+    private void afterPlayCleanup() {//////comp530
+        //remove progress bar
+        //noteBuilder.setProgress(0, 0, false);
+
+        //remove notification
+        noteMgr.cancel(noteID);
+        unregisterReceiver(broadcastReceiver);
+        //release mediaPlayer's system resources
+        //videoView.release();
+        //videoView.
+        //release wifilock
+        //videoView.release();
+        //remove foreground status of service; make BackgroundPlayer killable
+        //stopForeground(true);
+
+        //stopSelf();
+    }
+
+    private void showPlaySign()//////comp530
+    {
+
+
+        note.contentView.setImageViewResource(R.id.notificationPlayPause, R.drawable.ic_play_circle_filled_white_24dp);
+        if(android.os.Build.VERSION.SDK_INT >=16){
+            note.bigContentView.setImageViewResource(R.id.notificationPlayPause, R.drawable.ic_play_circle_filled_white_24dp);
+        }
+        noteMgr.notify(noteID, note);
+
+    }
+
+    private void showPauseSign()//////comp530
+    {
+        note.contentView.setImageViewResource(R.id.notificationPlayPause, R.drawable.ic_pause_white_24dp);
+        if(android.os.Build.VERSION.SDK_INT >=16){
+            note.bigContentView.setImageViewResource(R.id.notificationPlayPause, R.drawable.ic_pause_white_24dp);
+        }
+        noteMgr.notify(noteID, note);
+
     }
 }
