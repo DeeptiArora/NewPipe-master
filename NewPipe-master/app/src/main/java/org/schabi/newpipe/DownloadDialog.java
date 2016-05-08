@@ -137,9 +137,9 @@ public class DownloadDialog extends DialogFragment {
         String nameToTest = fName;
         for (String pattern : forbiddenCharsPatterns) {
             //nameToTest = nameToTest.replaceAll(pattern, "_");
-	    nameToTest = nameToTest.replaceAll(pattern, " ");
+	    nameToTest = nameToTest.replaceAll(pattern, " ");/////comp530
         }
-	    nameToTest = nameToTest.trim();
+	    nameToTest = nameToTest.trim();//////comp530
         return nameToTest;
     }
 
